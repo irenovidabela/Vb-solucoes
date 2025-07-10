@@ -519,7 +519,7 @@ function App() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
-                      Local da Ocorrência
+                      Apartamento
                     </label>
                     <input
                       type="text"
@@ -532,14 +532,14 @@ function App() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
-                      Pessoas Envolvidas
+                      Bloco
                     </label>
                     <textarea
                       rows={3}
                       value={incidentForm.people_involved}
                       onChange={(e) => setIncidentForm({...incidentForm, people_involved: e.target.value})}
                       className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Descreva as pessoas envolvidas na ocorrência"
+                      placeholder="Informe o bloco onde ocorreu a ocorrência"
                     />
                   </div>
 
