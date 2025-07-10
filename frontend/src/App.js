@@ -398,10 +398,10 @@ function App() {
                               Tipo: {incident.type}
                             </span>
                             <span className="mr-4">
-                              Local: {incident.location}
+                              Apartamento: {incident.location}
                             </span>
                             <span className="mr-4">
-                              Por: {incident.created_by_username}
+                              Bloco: {incident.people_involved}
                             </span>
                             <span>
                               {formatDate(incident.created_at)}
