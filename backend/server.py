@@ -67,8 +67,8 @@ class IncidentCreate(BaseModel):
     title: str
     description: str
     type: str
-    location: str
-    people_involved: str
+    location: str  # apartamento
+    people_involved: str  # bloco
     severity: str  # baixa, media, alta
 
 class IncidentUpdate(BaseModel):
