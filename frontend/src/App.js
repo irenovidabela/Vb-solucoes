@@ -403,9 +403,9 @@ function App() {
                             <span className="mr-4">
                               Bloco: {incident.people_involved}
                             </span>
-                            <span>
-                              {formatDate(incident.created_at)}
-                            </span>
+                            <span className="mr-4">
+                      Por: {incident.created_by_username}
+                    </span>
                           </div>
                         </div>
                         <div className="flex items-center space-x-2">
