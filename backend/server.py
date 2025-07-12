@@ -92,6 +92,31 @@ class IncidentUpdate(BaseModel):
 class IncidentStatusUpdate(BaseModel):
     status: str  # nova, em_andamento, resolvida, cancelada
 
+class CommentCreate(BaseModel):
+    message: str
+
+class Comment(BaseModel):
+    id: str
+    incident_id: str
+    user_id: str
+    username: str
+    message: str
+    is_admin: bool
+    created_at: datetime
+
+class FileUpload(BaseModel):
+    id: str
+    incident_id: str
+    filename: str
+    original_name: str
+    file_type: str
+    file_size: int
+    upload_date: datetime
+
+class PasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+
 class Incident(BaseModel):
     id: str
     title: str
