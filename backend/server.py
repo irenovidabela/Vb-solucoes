@@ -22,8 +22,15 @@ SECRET_KEY = "vb_solucoes_secret_key_2024"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+# Create uploads directory
+UPLOAD_DIR = "/app/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 # FastAPI app
 app = FastAPI(title="VB Soluções - Livro de Ocorrência Online")
+
+# Mount static files for uploads
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 # CORS
 app.add_middleware(
