@@ -324,6 +324,12 @@ async def get_incidents(current_user: User = Depends(get_current_user)):
     
     incidents = list(incidents_collection.find(query).sort("created_at", -1))
     
+    # Add counts for comments and files
+    for incident in incidents:
+        incident["comments_count"] = comments_collection.count_documents({"incident_id": incident["id"]})
+        incident["files_count"] = files_collection.count_documents({"incident_id": incident["id"]})
+        incident["has_unread_comments"] = False  # You can implement this logic later
+    
     return [Incident(**incident) for incident in incidents]
 
 @app.get("/api/incidents/{incident_id}", response_model=Incident)
