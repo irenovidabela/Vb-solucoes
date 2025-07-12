@@ -316,11 +316,15 @@ async def create_incident(incident: IncidentCreate, current_user: User = Depends
     return Incident(**new_incident)
 
 @app.get("/api/incidents", response_model=List[Incident])
-async def get_incidents(current_user: User = Depends(get_current_user)):
+async def get_incidents(status: Optional[str] = None, current_user: User = Depends(get_current_user)):
     query = {}
     if current_user.role != "admin":
         # Regular users can only see their own incidents
         query["created_by"] = current_user.id
+    
+    # Filter by status if provided
+    if status:
+        query["status"] = status
     
     incidents = list(incidents_collection.find(query).sort("created_at", -1))
     
