@@ -39,6 +39,12 @@ client = pymongo.MongoClient(MONGO_URL)
 db = client[DB_NAME]
 users_collection = db.users
 incidents_collection = db.incidents
+comments_collection = db.comments
+files_collection = db.files
+
+# Create uploads directory
+UPLOAD_DIR = "/app/uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
