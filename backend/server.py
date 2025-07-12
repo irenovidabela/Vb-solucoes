@@ -130,6 +130,9 @@ class Incident(BaseModel):
     created_by_username: str
     created_at: datetime
     updated_at: datetime
+    comments_count: int = 0
+    files_count: int = 0
+    has_unread_comments: bool = False
 
 # Utility functions
 def verify_password(plain_password, hashed_password):
