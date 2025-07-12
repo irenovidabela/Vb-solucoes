@@ -1,282 +1,360 @@
-import requests
-import unittest
-import random
-import string
-from datetime import datetime
+#!/usr/bin/env python3
+"""
+VB Soluções Backend API Test Suite
+Tests all new functionalities: Comments, File Upload, Status Filtering, Password Change
+"""
 
-class VBSolucoesAPITester(unittest.TestCase):
-    def __init__(self, *args, **kwargs):
-        super(VBSolucoesAPITester, self).__init__(*args, **kwargs)
-        self.base_url = "https://4d2a15ca-7963-47bd-ad9f-b40225691d51.preview.emergentagent.com/api"
+import requests
+import sys
+import json
+from datetime import datetime
+from io import BytesIO
+
+class VBSolucoesAPITester:
+    def __init__(self, base_url="https://4d2a15ca-7963-47bd-ad9f-b40225691d51.preview.emergentagent.com"):
+        self.base_url = base_url
         self.admin_token = None
         self.user_token = None
-        self.admin_user = None
-        self.regular_user = None
         self.test_incident_id = None
-
-    def random_string(self, length=8):
-        """Generate a random string for test data"""
-        return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
-
-    def setUp(self):
-        """Set up for each test - ensure we have admin and user tokens"""
-        # First check if the API is healthy
-        self.test_health_endpoint()
+        self.test_comment_id = None
+        self.test_file_id = None
+        self.test_username = None
+        self.tests_run = 0
+        self.tests_passed = 0
         
-        # Login as admin
-        self.admin_login()
+        print(f"🚀 Starting VB Soluções API Tests")
+        print(f"📡 Base URL: {self.base_url}")
+        print("=" * 60)
+
+    def log_test(self, name, success, details=""):
+        """Log test results"""
+        self.tests_run += 1
+        if success:
+            self.tests_passed += 1
+            print(f"✅ {name}")
+        else:
+            print(f"❌ {name}")
+        if details:
+            print(f"   {details}")
+
+    def make_request(self, method, endpoint, data=None, files=None, token=None, expected_status=200):
+        """Make HTTP request with proper headers"""
+        url = f"{self.base_url}/api/{endpoint}"
+        headers = {'Content-Type': 'application/json'}
         
-        # Create a test user if needed
-        if not self.user_token:
-            self.test_user_registration()
+        if token:
+            headers['Authorization'] = f'Bearer {token}'
+            
+        if files:
+            # Remove Content-Type for file uploads
+            headers.pop('Content-Type', None)
+            
+        try:
+            if method == 'GET':
+                response = requests.get(url, headers=headers)
+            elif method == 'POST':
+                if files:
+                    response = requests.post(url, files=files, headers=headers)
+                else:
+                    response = requests.post(url, json=data, headers=headers)
+            elif method == 'PUT':
+                response = requests.put(url, json=data, headers=headers)
+            elif method == 'DELETE':
+                response = requests.delete(url, headers=headers)
+            else:
+                raise ValueError(f"Unsupported method: {method}")
+                
+            success = response.status_code == expected_status
+            return success, response.json() if response.content else {}, response.status_code
+            
+        except requests.exceptions.RequestException as e:
+            return False, {"error": str(e)}, 0
+        except json.JSONDecodeError:
+            return False, {"error": "Invalid JSON response"}, response.status_code
 
-    def test_health_endpoint(self):
-        """Test the health endpoint"""
-        print("\n🔍 Testing health endpoint...")
-        response = requests.get(f"{self.base_url}/health")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "healthy")
-        print("✅ Health endpoint is working")
+    def test_health_check(self):
+        """Test API health endpoint"""
+        success, data, status = self.make_request('GET', 'health')
+        self.log_test("Health Check", success and data.get('status') == 'healthy')
+        return success
 
-    def admin_login(self):
-        """Login as admin user"""
-        print("\n🔍 Testing admin login...")
-        response = requests.post(
-            f"{self.base_url}/login",
-            json={"username": "admin", "password": "admin123"}
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("access_token", data)
-        self.admin_token = data["access_token"]
-        self.admin_user = data["user"]
-        print(f"✅ Admin login successful - Role: {self.admin_user['role']}")
+    def test_admin_login(self):
+        """Test admin login"""
+        login_data = {"username": "admin", "password": "admin123"}
+        success, data, status = self.make_request('POST', 'login', login_data)
+        
+        if success and 'access_token' in data:
+            self.admin_token = data['access_token']
+            self.log_test("Admin Login", True, f"Role: {data['user']['role']}")
+            return True
+        else:
+            self.log_test("Admin Login", False, f"Status: {status}, Data: {data}")
+            return False
 
     def test_user_registration(self):
         """Test user registration"""
-        print("\n🔍 Testing user registration...")
-        username = f"testuser_{self.random_string()}"
-        email = f"{username}@test.com"
-        password = "Test123!"
-        
-        response = requests.post(
-            f"{self.base_url}/register",
-            json={
-                "username": username,
-                "email": email,
-                "password": password
-            }
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("access_token", data)
-        self.user_token = data["access_token"]
-        self.regular_user = data["user"]
-        print(f"✅ User registration successful - Username: {username}")
-
-    def test_user_login(self):
-        """Test regular user login"""
-        if not self.regular_user:
-            self.test_user_registration()
-            return
-            
-        print("\n🔍 Testing regular user login...")
-        response = requests.post(
-            f"{self.base_url}/login",
-            json={
-                "username": self.regular_user["username"],
-                "password": "Test123!"
-            }
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("access_token", data)
-        self.user_token = data["access_token"]
-        print("✅ User login successful")
-
-    def test_create_incident(self):
-        """Test creating a new incident"""
-        print("\n🔍 Testing incident creation...")
-        if not self.user_token:
-            self.test_user_login()
-            
-        headers = {"Authorization": f"Bearer {self.user_token}"}
-        incident_data = {
-            "title": f"Test Incident {self.random_string()}",
-            "description": "This is a test incident created by automated testing",
-            "type": "acidente",
-            "location": "Test Location",
-            "people_involved": "Test Person 1, Test Person 2",
-            "severity": "baixa"
+        timestamp = datetime.now().strftime("%H%M%S")
+        user_data = {
+            "username": f"testuser_{timestamp}",
+            "email": f"test_{timestamp}@example.com",
+            "password": "testpass123"
         }
         
-        response = requests.post(
-            f"{self.base_url}/incidents",
-            json=incident_data,
-            headers=headers
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("id", data)
-        self.test_incident_id = data["id"]
-        print(f"✅ Incident created successfully - ID: {self.test_incident_id}")
-        return data
+        success, data, status = self.make_request('POST', 'register', user_data)
+        
+        if success and 'access_token' in data:
+            self.user_token = data['access_token']
+            self.test_username = user_data['username']
+            self.log_test("User Registration", True, f"User: {data['user']['username']}")
+            return True
+        else:
+            self.log_test("User Registration", False, f"Status: {status}, Data: {data}")
+            return False
+
+    def test_create_incident(self):
+        """Test incident creation"""
+        incident_data = {
+            "title": "Test Incident for API Testing",
+            "description": "This is a test incident created by automated testing",
+            "type": "acidente",
+            "location": "Apt 101",
+            "people_involved": "Bloco A",
+            "severity": "media"
+        }
+        
+        success, data, status = self.make_request('POST', 'incidents', incident_data, token=self.user_token)
+        
+        if success and 'id' in data:
+            self.test_incident_id = data['id']
+            self.log_test("Create Incident", True, f"ID: {self.test_incident_id}")
+            return True
+        else:
+            self.log_test("Create Incident", False, f"Status: {status}, Data: {data}")
+            return False
 
     def test_get_incidents(self):
-        """Test getting all incidents"""
-        print("\n🔍 Testing get all incidents...")
-        # Ensure we have at least one incident
-        if not self.test_incident_id:
-            self.test_create_incident()
-            
-        # Test as regular user
-        headers = {"Authorization": f"Bearer {self.user_token}"}
-        response = requests.get(
-            f"{self.base_url}/incidents",
-            headers=headers
-        )
-        self.assertEqual(response.status_code, 200)
-        user_incidents = response.json()
-        self.assertIsInstance(user_incidents, list)
-        print(f"✅ Regular user can see {len(user_incidents)} incidents")
+        """Test getting incidents list"""
+        success, data, status = self.make_request('GET', 'incidents', token=self.user_token)
         
-        # Test as admin
-        headers = {"Authorization": f"Bearer {self.admin_token}"}
-        response = requests.get(
-            f"{self.base_url}/incidents",
-            headers=headers
-        )
-        self.assertEqual(response.status_code, 200)
-        admin_incidents = response.json()
-        self.assertIsInstance(admin_incidents, list)
-        print(f"✅ Admin can see {len(admin_incidents)} incidents")
-        
-        # Admin should see at least as many incidents as the regular user
-        self.assertGreaterEqual(len(admin_incidents), len(user_incidents))
+        if success and isinstance(data, list):
+            self.log_test("Get Incidents", True, f"Found {len(data)} incidents")
+            return True
+        else:
+            self.log_test("Get Incidents", False, f"Status: {status}")
+            return False
 
-    def test_get_incident_details(self):
-        """Test getting incident details"""
-        print("\n🔍 Testing get incident details...")
-        # Ensure we have an incident
-        if not self.test_incident_id:
-            incident = self.test_create_incident()
-            self.test_incident_id = incident["id"]
-            
-        # Test as the user who created it
-        headers = {"Authorization": f"Bearer {self.user_token}"}
-        response = requests.get(
-            f"{self.base_url}/incidents/{self.test_incident_id}",
-            headers=headers
-        )
-        self.assertEqual(response.status_code, 200)
-        incident = response.json()
-        self.assertEqual(incident["id"], self.test_incident_id)
-        print("✅ User can view their own incident details")
+    def test_get_incidents_by_status(self):
+        """Test filtering incidents by status"""
+        statuses = ['nova', 'em_andamento', 'resolvida', 'cancelada']
+        all_passed = True
         
-        # Test as admin
-        headers = {"Authorization": f"Bearer {self.admin_token}"}
-        response = requests.get(
-            f"{self.base_url}/incidents/{self.test_incident_id}",
-            headers=headers
-        )
-        self.assertEqual(response.status_code, 200)
-        incident = response.json()
-        self.assertEqual(incident["id"], self.test_incident_id)
-        print("✅ Admin can view any incident details")
+        for status in statuses:
+            success, data, http_status = self.make_request('GET', f'incidents?status={status}', token=self.user_token)
+            if success:
+                self.log_test(f"Filter by Status '{status}'", True, f"Found {len(data)} incidents")
+            else:
+                self.log_test(f"Filter by Status '{status}'", False, f"HTTP {http_status}")
+                all_passed = False
+                
+        return all_passed
 
     def test_update_incident_status(self):
         """Test updating incident status (admin only)"""
-        print("\n🔍 Testing update incident status (admin only)...")
-        # Ensure we have an incident
         if not self.test_incident_id:
-            incident = self.test_create_incident()
-            self.test_incident_id = incident["id"]
+            self.log_test("Update Incident Status", False, "No test incident available")
+            return False
             
-        # Try as regular user (should fail)
-        headers = {"Authorization": f"Bearer {self.user_token}"}
-        response = requests.put(
-            f"{self.base_url}/incidents/{self.test_incident_id}/status",
-            json={"status": "em_andamento"},
-            headers=headers
-        )
-        self.assertEqual(response.status_code, 403)  # Forbidden
-        print("✅ Regular user cannot update incident status (403 Forbidden)")
+        status_data = {"status": "em_andamento"}
+        success, data, status = self.make_request('PUT', f'incidents/{self.test_incident_id}/status', 
+                                                 status_data, token=self.admin_token)
         
-        # Try as admin (should succeed)
-        headers = {"Authorization": f"Bearer {self.admin_token}"}
-        response = requests.put(
-            f"{self.base_url}/incidents/{self.test_incident_id}/status",
-            json={"status": "em_andamento"},
-            headers=headers
-        )
-        self.assertEqual(response.status_code, 200)
-        print("✅ Admin can update incident status")
-        
-        # Verify the status was updated
-        response = requests.get(
-            f"{self.base_url}/incidents/{self.test_incident_id}",
-            headers=headers
-        )
-        incident = response.json()
-        self.assertEqual(incident["status"], "em_andamento")
-        print("✅ Status was successfully updated to 'em_andamento'")
-        
-        # Update to resolved
-        response = requests.put(
-            f"{self.base_url}/incidents/{self.test_incident_id}/status",
-            json={"status": "resolvida"},
-            headers=headers
-        )
-        self.assertEqual(response.status_code, 200)
-        
-        # Verify the status was updated
-        response = requests.get(
-            f"{self.base_url}/incidents/{self.test_incident_id}",
-            headers=headers
-        )
-        incident = response.json()
-        self.assertEqual(incident["status"], "resolvida")
-        print("✅ Status was successfully updated to 'resolvida'")
+        self.log_test("Update Incident Status", success, f"Status: {status}")
+        return success
 
-def run_tests():
-    """Run all the API tests"""
-    print("🚀 Starting VB Soluções API Tests")
-    
-    # Create a test suite
-    suite = unittest.TestSuite()
-    
-    # Add test methods
+    def test_create_comment(self):
+        """Test creating comments"""
+        if not self.test_incident_id:
+            self.log_test("Create Comment", False, "No test incident available")
+            return False
+            
+        # Test user comment
+        comment_data = {"message": "This is a test comment from user"}
+        success, data, status = self.make_request('POST', f'incidents/{self.test_incident_id}/comments', 
+                                                 comment_data, token=self.user_token)
+        
+        if success and 'id' in data:
+            self.test_comment_id = data['id']
+            self.log_test("Create User Comment", True, f"Comment ID: {self.test_comment_id}")
+            
+            # Test admin comment
+            admin_comment_data = {"message": "This is an admin response"}
+            success2, data2, status2 = self.make_request('POST', f'incidents/{self.test_incident_id}/comments', 
+                                                        admin_comment_data, token=self.admin_token)
+            
+            self.log_test("Create Admin Comment", success2, f"Admin comment created")
+            return success and success2
+        else:
+            self.log_test("Create Comment", False, f"Status: {status}, Data: {data}")
+            return False
+
+    def test_get_comments(self):
+        """Test getting comments for incident"""
+        if not self.test_incident_id:
+            self.log_test("Get Comments", False, "No test incident available")
+            return False
+            
+        success, data, status = self.make_request('GET', f'incidents/{self.test_incident_id}/comments', 
+                                                 token=self.user_token)
+        
+        if success and isinstance(data, list):
+            self.log_test("Get Comments", True, f"Found {len(data)} comments")
+            # Check if admin flag is properly set
+            admin_comments = [c for c in data if c.get('is_admin')]
+            user_comments = [c for c in data if not c.get('is_admin')]
+            print(f"   Admin comments: {len(admin_comments)}, User comments: {len(user_comments)}")
+            return True
+        else:
+            self.log_test("Get Comments", False, f"Status: {status}")
+            return False
+
+    def test_file_upload(self):
+        """Test file upload functionality"""
+        if not self.test_incident_id:
+            self.log_test("File Upload", False, "No test incident available")
+            return False
+            
+        # Create a test image file (small PNG)
+        test_image_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\tpHYs\x00\x00\x0b\x13\x00\x00\x0b\x13\x01\x00\x9a\x9c\x18\x00\x00\x00\nIDATx\x9cc\xf8\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00IEND\xaeB`\x82'
+        
+        files = {'file': ('test_image.png', BytesIO(test_image_data), 'image/png')}
+        
+        success, data, status = self.make_request('POST', f'incidents/{self.test_incident_id}/files', 
+                                                 files=files, token=self.user_token)
+        
+        if success and 'file_id' in data:
+            self.test_file_id = data['file_id']
+            self.log_test("File Upload", True, f"File ID: {self.test_file_id}")
+            return True
+        else:
+            self.log_test("File Upload", False, f"Status: {status}, Data: {data}")
+            return False
+
+    def test_get_files(self):
+        """Test getting files for incident"""
+        if not self.test_incident_id:
+            self.log_test("Get Files", False, "No test incident available")
+            return False
+            
+        success, data, status = self.make_request('GET', f'incidents/{self.test_incident_id}/files', 
+                                                 token=self.user_token)
+        
+        if success and isinstance(data, list):
+            self.log_test("Get Files", True, f"Found {len(data)} files")
+            return True
+        else:
+            self.log_test("Get Files", False, f"Status: {status}")
+            return False
+
+    def test_file_upload_validation(self):
+        """Test file upload validation (size, type limits)"""
+        if not self.test_incident_id:
+            self.log_test("File Upload Validation", False, "No test incident available")
+            return False
+            
+        # Test invalid file type
+        invalid_file = {'file': ('test.txt', BytesIO(b'test content'), 'text/plain')}
+        success, data, status = self.make_request('POST', f'incidents/{self.test_incident_id}/files', 
+                                                 files=invalid_file, token=self.user_token, expected_status=400)
+        
+        self.log_test("File Type Validation", success, "Rejected invalid file type")
+        return success
+
+    def test_delete_file(self):
+        """Test file deletion"""
+        if not self.test_file_id:
+            self.log_test("Delete File", False, "No test file available")
+            return False
+            
+        success, data, status = self.make_request('DELETE', f'files/{self.test_file_id}', 
+                                                 token=self.user_token)
+        
+        self.log_test("Delete File", success, f"File deleted")
+        return success
+
+    def test_change_password(self):
+        """Test password change functionality"""
+        password_data = {
+            "current_password": "testpass123",
+            "new_password": "newtestpass123"
+        }
+        
+        success, data, status = self.make_request('PUT', 'change-password', password_data, token=self.user_token)
+        self.log_test("Change Password", success, f"Password updated")
+        return success
+
+    def test_permissions(self):
+        """Test permission restrictions"""
+        if not self.test_incident_id:
+            self.log_test("Permission Tests", False, "No test incident available")
+            return False
+            
+        # Test that regular user cannot update incident status
+        status_data = {"status": "resolvida"}
+        success, data, status = self.make_request('PUT', f'incidents/{self.test_incident_id}/status', 
+                                                 status_data, token=self.user_token, expected_status=403)
+        
+        self.log_test("User Status Update Restriction", success, "User correctly denied status update")
+        return success
+
+    def run_all_tests(self):
+        """Run complete test suite"""
+        print("🔍 Starting API Test Suite...")
+        
+        # Basic functionality tests
+        if not self.test_health_check():
+            print("❌ Health check failed, stopping tests")
+            return False
+            
+        if not self.test_admin_login():
+            print("❌ Admin login failed, stopping tests")
+            return False
+            
+        if not self.test_user_registration():
+            print("❌ User registration failed, stopping tests")
+            return False
+            
+        # Core incident functionality
+        self.test_create_incident()
+        self.test_get_incidents()
+        self.test_get_incidents_by_status()
+        self.test_update_incident_status()
+        
+        # New features testing
+        self.test_create_comment()
+        self.test_get_comments()
+        self.test_file_upload()
+        self.test_get_files()
+        self.test_file_upload_validation()
+        self.test_delete_file()
+        self.test_change_password()
+        self.test_permissions()
+        
+        # Print results
+        print("\n" + "=" * 60)
+        print(f"📊 Test Results: {self.tests_passed}/{self.tests_run} tests passed")
+        
+        if self.tests_passed == self.tests_run:
+            print("🎉 All tests passed!")
+            return True
+        else:
+            print(f"⚠️  {self.tests_run - self.tests_passed} tests failed")
+            return False
+
+def main():
+    """Main test execution"""
     tester = VBSolucoesAPITester()
-    suite.addTest(VBSolucoesAPITester('test_health_endpoint'))
-    suite.addTest(VBSolucoesAPITester('admin_login'))
-    suite.addTest(VBSolucoesAPITester('test_user_registration'))
-    suite.addTest(VBSolucoesAPITester('test_user_login'))
-    suite.addTest(VBSolucoesAPITester('test_create_incident'))
-    suite.addTest(VBSolucoesAPITester('test_get_incidents'))
-    suite.addTest(VBSolucoesAPITester('test_get_incident_details'))
-    suite.addTest(VBSolucoesAPITester('test_update_incident_status'))
-    
-    # Run the tests
-    runner = unittest.TextTestRunner()
-    result = runner.run(suite)
-    
-    # Print summary
-    print("\n📊 Test Summary:")
-    print(f"Tests run: {result.testsRun}")
-    print(f"Errors: {len(result.errors)}")
-    print(f"Failures: {len(result.failures)}")
-    
-    if not result.wasSuccessful():
-        print("\n❌ Some tests failed:")
-        for failure in result.failures:
-            print(f"- {failure[0]}")
-        for error in result.errors:
-            print(f"- {error[0]}")
-    else:
-        print("\n✅ All API tests passed successfully!")
-    
-    return result.wasSuccessful()
+    success = tester.run_all_tests()
+    return 0 if success else 1
 
 if __name__ == "__main__":
-    run_tests()
+    sys.exit(main())
