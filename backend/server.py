@@ -416,6 +416,229 @@ async def delete_incident(incident_id: str, current_user: User = Depends(get_adm
     
     return {"message": "Incident deleted successfully"}
 
+@app.post("/api/incidents/{incident_id}/comments", response_model=Comment)
+async def create_comment(
+    incident_id: str, 
+    comment: CommentCreate, 
+    current_user: User = Depends(get_current_user)
+):
+    """Create a new comment for an incident"""
+    # Check if incident exists and user has permission
+    incident = incidents_collection.find_one({"id": incident_id})
+    if not incident:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incident not found"
+        )
+    
+    # Check permissions (only creator or admin can comment)
+    if current_user.role != "admin" and incident["created_by"] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions"
+        )
+    
+    comment_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+    
+    new_comment = {
+        "id": comment_id,
+        "incident_id": incident_id,
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "message": comment.message,
+        "is_admin": current_user.role == "admin",
+        "created_at": now
+    }
+    
+    comments_collection.insert_one(new_comment)
+    
+    # Update incident with comment count
+    comment_count = comments_collection.count_documents({"incident_id": incident_id})
+    incidents_collection.update_one(
+        {"id": incident_id},
+        {"$set": {"comments_count": comment_count, "updated_at": now}}
+    )
+    
+    return Comment(**new_comment)
+
+@app.get("/api/incidents/{incident_id}/comments", response_model=List[Comment])
+async def get_comments(incident_id: str, current_user: User = Depends(get_current_user)):
+    """Get all comments for an incident"""
+    # Check if incident exists and user has permission
+    incident = incidents_collection.find_one({"id": incident_id})
+    if not incident:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incident not found"
+        )
+    
+    # Check permissions (only creator or admin can view comments)
+    if current_user.role != "admin" and incident["created_by"] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions"
+        )
+    
+    comments = list(comments_collection.find({"incident_id": incident_id}).sort("created_at", 1))
+    return [Comment(**comment) for comment in comments]
+
+@app.post("/api/incidents/{incident_id}/files")
+async def upload_file(
+    incident_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload a file for an incident"""
+    # Check if incident exists and user has permission
+    incident = incidents_collection.find_one({"id": incident_id})
+    if not incident:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incident not found"
+        )
+    
+    # Check permissions (only creator or admin can upload files)
+    if current_user.role != "admin" and incident["created_by"] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions"
+        )
+    
+    # Check file count limit
+    file_count = files_collection.count_documents({"incident_id": incident_id})
+    if file_count >= 10:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Maximum 10 files per incident"
+        )
+    
+    # Check file size (5MB limit)
+    if file.size > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File size must be less than 5MB"
+        )
+    
+    # Check file type
+    allowed_types = [".jpg", ".jpeg", ".png", ".pdf"]
+    file_ext = os.path.splitext(file.filename)[1].lower()
+    if file_ext not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only JPG, JPEG, PNG, and PDF files are allowed"
+        )
+    
+    # Generate unique filename
+    file_id = str(uuid.uuid4())
+    filename = f"{file_id}_{file.filename}"
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    # Save file info to database
+    file_info = {
+        "id": file_id,
+        "incident_id": incident_id,
+        "filename": filename,
+        "original_name": file.filename,
+        "file_type": file_ext,
+        "file_size": file.size,
+        "upload_date": datetime.utcnow()
+    }
+    
+    files_collection.insert_one(file_info)
+    
+    # Update incident with file count
+    file_count = files_collection.count_documents({"incident_id": incident_id})
+    incidents_collection.update_one(
+        {"id": incident_id},
+        {"$set": {"files_count": file_count, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"message": "File uploaded successfully", "file_id": file_id}
+
+@app.get("/api/incidents/{incident_id}/files", response_model=List[FileUpload])
+async def get_files(incident_id: str, current_user: User = Depends(get_current_user)):
+    """Get all files for an incident"""
+    # Check if incident exists and user has permission
+    incident = incidents_collection.find_one({"id": incident_id})
+    if not incident:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incident not found"
+        )
+    
+    # Check permissions (only creator or admin can view files)
+    if current_user.role != "admin" and incident["created_by"] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions"
+        )
+    
+    files = list(files_collection.find({"incident_id": incident_id}).sort("upload_date", -1))
+    return [FileUpload(**file) for file in files]
+
+@app.delete("/api/files/{file_id}")
+async def delete_file(file_id: str, current_user: User = Depends(get_current_user)):
+    """Delete a file"""
+    file_info = files_collection.find_one({"id": file_id})
+    if not file_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File not found"
+        )
+    
+    # Check permissions (only creator or admin can delete files)
+    incident = incidents_collection.find_one({"id": file_info["incident_id"]})
+    if current_user.role != "admin" and incident["created_by"] != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions"
+        )
+    
+    # Delete file from filesystem
+    file_path = os.path.join(UPLOAD_DIR, file_info["filename"])
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    
+    # Delete file info from database
+    files_collection.delete_one({"id": file_id})
+    
+    # Update incident with file count
+    file_count = files_collection.count_documents({"incident_id": file_info["incident_id"]})
+    incidents_collection.update_one(
+        {"id": file_info["incident_id"]},
+        {"$set": {"files_count": file_count, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"message": "File deleted successfully"}
+
+@app.put("/api/change-password")
+async def change_password(
+    password_update: PasswordUpdate,
+    current_user: User = Depends(get_current_user)
+):
+    """Change user password"""
+    # Verify current password
+    db_user = users_collection.find_one({"id": current_user.id})
+    if not verify_password(password_update.current_password, db_user["password"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+    
+    # Update password
+    new_hashed_password = get_password_hash(password_update.new_password)
+    users_collection.update_one(
+        {"id": current_user.id},
+        {"$set": {"password": new_hashed_password, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"message": "Password updated successfully"}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
